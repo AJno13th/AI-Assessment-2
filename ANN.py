@@ -1,5 +1,6 @@
 # Import the pandas library and give it the alias 'pd'
 import pandas as pd
+import numpy as np
 
 # Step 1: Read the data
 # Define the file path to the dataset. The 'r' prefix is used to handle the backslashes in the Windows file path correctly.
@@ -32,3 +33,15 @@ for col in numeric_columns:
 # Verify that there are no NaN values left
 # Calculate and print the total number of missing values in the entire DataFrame
 print("Missing values after filling:", data.isnull().sum().sum())
+
+
+from sklearn.preprocessing import StandardScaler
+
+# Step 3: Data Standardization
+# Standardize numerical features to ensure all features have a similar scale
+numeric_columns = data.select_dtypes(include=[np.number]).columns
+scaler = StandardScaler()
+data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
+
+# Print the first few rows of the standardized numerical features for verification
+print(data[numeric_columns].head())
