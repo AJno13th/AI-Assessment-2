@@ -7,6 +7,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
+import matplotlib.pyplot as Matplot  # Use Matplot for plotting
 
 # Step 1: Read the data
 # Define the file path to the dataset. The 'r' prefix is used to handle the backslashes in the Windows file path correctly.
@@ -84,7 +85,7 @@ model.add(Dense(1, activation='sigmoid'))
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # Train the model
-model.fit(X_train, y_train, epochs=100, batch_size=10, verbose=1)
+training_history = model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=100, batch_size=10, verbose=1)
 
 # Step 4: Evaluating the model
 y_pred = (model.predict(X_test) > 0.5).astype("int32")
@@ -95,3 +96,22 @@ cm = confusion_matrix(y_test, y_pred)
 print("Accuracy:", accuracy)
 print("Precision:", precision)
 print("Confusion Matrix:\n", cm)
+
+# Step 7: Visualizing the training process
+# Plot training & validation accuracy values
+Matplot.plot(training_history.history['accuracy'])
+Matplot.plot(training_history.history['val_accuracy'])
+Matplot.title('Model accuracy')
+Matplot.ylabel('Accuracy')
+Matplot.xlabel('Epoch')
+Matplot.legend(['Train', 'Validation'], loc='upper left')
+Matplot.show()
+
+# Plot training & validation loss values
+Matplot.plot(training_history.history['loss'])
+Matplot.plot(training_history.history['val_loss'])
+Matplot.title('Model loss')
+Matplot.ylabel('Loss')
+Matplot.xlabel('Epoch')
+Matplot.legend(['Train', 'Validation'], loc='upper left')
+Matplot.show()
