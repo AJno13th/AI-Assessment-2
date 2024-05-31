@@ -1,117 +1,151 @@
 # Import the pandas library and give it the alias 'pd'
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, f1_score, roc_auc_score
+from scikeras.wrappers import KerasClassifier
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
-import matplotlib.pyplot as Matplot  # Use Matplot for plotting
+from tensorflow.keras.layers import Dense, Input
+import matplotlib.pyplot as plt
 
 # Step 1: Read the data
-# Define the file path to the dataset. The 'r' prefix is used to handle the backslashes in the Windows file path correctly.
-file_path = r'C:\\Users\\antho\\Downloads\\Dataset of Diabetes .csv'  # Update the path as needed
+# Define the file path to the dataset
+dataset_path = r'C:\Users\antho\Downloads\Dataset of Diabetes .csv'  # Update the path as needed
 
 # Read the CSV file into a pandas DataFrame
-data = pd.read_csv(file_path)
+diabetes_data = pd.read_csv(dataset_path)
 
 # Print column names for verification
-# This helps to ensure the data has been loaded correctly and to see the names of all columns in the dataset.
-print(data.columns)
+print(diabetes_data.columns)
 
 # Step 2: Data cleaning and preprocessing
-
 # Fill NaN values in 'Gender' with the mode (most frequent value)
-# Check if the 'Gender' column exists in the DataFrame
-if 'Gender' in data.columns:
-    # Calculate the mode of the 'Gender' column
-    gender_mode = data['Gender'].mode()[0]
-    # Fill NaN values in the 'Gender' column with the mode value
-    data['Gender'].fillna(gender_mode, inplace=True)
+if 'Gender' in diabetes_data.columns:
+    mode_gender = diabetes_data['Gender'].mode()[0]
+    diabetes_data['Gender'].fillna(mode_gender, inplace=True)
 
 # Fill NaN values in other columns with the mean of the respective column
-# Select columns with numeric data types
-numeric_columns = data.select_dtypes(include=[np.number]).columns
-# Iterate through each numeric column
-for col in numeric_columns:
-    # Fill NaN values in the column with the mean of the column
-    data[col].fillna(data[col].mean(), inplace=True)
+num_cols = diabetes_data.select_dtypes(include=[np.number]).columns
+for column in num_cols:
+    diabetes_data[column].fillna(diabetes_data[column].mean(), inplace=True)
 
 # Verify that there are no NaN values left
-# Calculate and print the total number of missing values in the entire DataFrame
-print("Missing values after filling:", data.isnull().sum().sum())
+print("Missing values after filling:", diabetes_data.isnull().sum().sum())
 
-# Convert categorical columns to numerical (if needed)
-if 'Gender' in data.columns:
-    data['Gender'] = data['Gender'].map({'M': 1, 'F': 0})
+# Convert categorical columns to numerical values
+categorical_columns = diabetes_data.select_dtypes(include=[object]).columns
+for column in categorical_columns:
+    diabetes_data[column] = pd.factorize(diabetes_data[column])[0]
 
-# Convert target variable 'CLASS' to numerical
-if 'CLASS' in data.columns:
-    data['CLASS'] = data['CLASS'].map({'N': 0, 'Y': 1, 'P': 2})  # Assuming 'Y' and 'P' are other classes
+# Remove rows with NaN values in 'CLASS' column
+diabetes_data.dropna(subset=['CLASS'], inplace=True)
 
-# Remove rows with NaN values in 'CLASS' after mapping
-data = data.dropna(subset=['CLASS'])
+# Create new feature 'BMI_Age'
+diabetes_data['BMI_Age'] = diabetes_data['BMI'] * diabetes_data['AGE']
 
-# Features and target split
-X = data.drop('CLASS', axis=1)
-y = data['CLASS']
+# Step 3: Feature Scaling
+features = diabetes_data.drop(columns=['CLASS'])
+target = diabetes_data['CLASS']
 
-# Check for specific column names and handle missing columns
-if 'BMI' in X.columns and 'AGE' in X.columns:
-    X['BMI_Age'] = X['BMI'] * X['AGE']
-else:
-    print("Columns 'BMI' or 'AGE' not found in the dataset.")
-    # If columns are missing, create BMI_Age with default values (optional)
-    X['BMI_Age'] = np.zeros(len(X))
+train_features, test_features, train_target, test_target = train_test_split(features, target, test_size=0.2, random_state=42)
 
-# Ensure no NaN values in features
-X = X.fillna(0)
-print("Missing values in features after filling:", X.isnull().sum().sum())
-
-# Standardize the features
 scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+train_features = scaler.fit_transform(train_features)
+test_features = scaler.transform(test_features)
 
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+# Step 4: Hyperparameter Tuning
+def build_ann(optimizer='adam'):
+    ann_model = Sequential()
+    ann_model.add(Input(shape=(train_features.shape[1],)))
+    ann_model.add(Dense(units=16, activation='relu'))
+    ann_model.add(Dense(units=8, activation='relu'))
+    ann_model.add(Dense(units=1, activation='sigmoid'))
+    ann_model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    return ann_model
 
-# Step 3: Building and training the model
-model = Sequential()
-model.add(Dense(16, input_dim=X_train.shape[1], activation='relu'))
-model.add(Dense(8, activation='relu'))
-model.add(Dense(1, activation='sigmoid'))
+ann = KerasClassifier(model=build_ann, verbose=0)
 
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+hyperparameters = {
+    'batch_size': [10, 20],
+    'epochs': [50, 100],
+    'optimizer': ['adam', 'rmsprop']
+}
 
-# Train the model
-training_history = model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=100, batch_size=10, verbose=1)
+grid_search_cv = GridSearchCV(estimator=ann, param_grid=hyperparameters, cv=StratifiedKFold(n_splits=5))
+grid_search_cv.fit(train_features, train_target)
 
-# Step 4: Evaluating the model
-y_pred = (model.predict(X_test) > 0.5).astype("int32")
-accuracy = accuracy_score(y_test, y_pred)
-precision = precision_score(y_test, y_pred, average='weighted')
-cm = confusion_matrix(y_test, y_pred)
+optimal_params = grid_search_cv.best_params_
+print("Best Hyperparameters:", optimal_params)
 
-print("Accuracy:", accuracy)
-print("Precision:", precision)
-print("Confusion Matrix:\n", cm)
+# Step 5: Cross-Validation
+cv_scores = cross_val_score(grid_search_cv, features, target, cv=5)
+print("Cross-Validation Scores:", cv_scores)
+print("Mean CV Score:", np.mean(cv_scores))
+
+# Step 6: Model Training and Evaluation
+optimal_model = build_ann(optimizer=optimal_params['optimizer'])
+training_history = optimal_model.fit(train_features, train_target, batch_size=optimal_params['batch_size'], epochs=optimal_params['epochs'], validation_split=0.2, verbose=0)
+
+test_features_scaled = scaler.transform(test_features)
+pred_target = (optimal_model.predict(test_features_scaled) > 0.5).astype(int)
+
+conf_matrix = confusion_matrix(test_target, pred_target)
+acc_score = accuracy_score(test_target, pred_target)
+prec_score = precision_score(test_target, pred_target, average='weighted')
+f1score = f1_score(test_target, pred_target, average='weighted')
+roc_auc_score = roc_auc_score(test_target, optimal_model.predict_proba(test_features_scaled), multi_class='ovr')
+
+print("Confusion Matrix:\n", conf_matrix)
+print("Accuracy:", acc_score)
+print("Precision:", prec_score)
+print("F1 Score:", f1score)
+print("ROC-AUC Score:", roc_auc_score)
 
 # Step 7: Visualizing the training process
-# Plot training & validation accuracy values
-Matplot.plot(training_history.history['accuracy'])
-Matplot.plot(training_history.history['val_accuracy'])
-Matplot.title('Model accuracy')
-Matplot.ylabel('Accuracy')
-Matplot.xlabel('Epoch')
-Matplot.legend(['Train', 'Validation'], loc='upper left')
-Matplot.show()
+plt.plot(training_history.history['accuracy'])
+plt.plot(training_history.history['val_accuracy'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.show()
 
-# Plot training & validation loss values
-Matplot.plot(training_history.history['loss'])
-Matplot.plot(training_history.history['val_loss'])
-Matplot.title('Model loss')
-Matplot.ylabel('Loss')
-Matplot.xlabel('Epoch')
-Matplot.legend(['Train', 'Validation'], loc='upper left')
-Matplot.show()
+plt.plot(training_history.history['loss'])
+plt.plot(training_history.history['val_loss'])
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.show()
+
+# Documenting the steps
+documentation = """
+1. Data Reading and Cleaning:
+   - Read the dataset from the provided CSV file.
+   - Filled missing values in 'Gender' with the mode and in numeric columns with the mean.
+   - Converted categorical columns to numerical values.
+   - Removed rows with NaN values in 'CLASS' column.
+   - Created new feature 'BMI_Age' by multiplying 'BMI' and 'AGE'.
+
+2. Feature Scaling:
+   - Standardized the features using StandardScaler.
+
+3. Hyperparameter Tuning:
+   - Used GridSearchCV to find the best parameters for batch size, epochs, and optimizer.
+
+4. Cross-Validation:
+   - Implemented 5-fold cross-validation to ensure the model generalizes well to unseen data.
+
+5. Model Training:
+   - Trained the final model with the best parameters from GridSearchCV.
+
+6. Model Evaluation:
+   - Evaluated the model using confusion matrix, accuracy, precision, F1 score, and ROC-AUC score.
+
+7. Visualization:
+   - Visualized the training process by plotting accuracy and loss over epochs for both training and validation sets.
+"""
+
+print(documentation)
