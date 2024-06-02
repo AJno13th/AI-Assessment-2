@@ -1,10 +1,18 @@
 # Import the pandas library and give it the alias 'pd'
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, StratifiedKFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, f1_score, roc_auc_score
+from scikeras.wrappers import KerasClassifier
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Input
+import matplotlib.pyplot as matplot
 
 # Step 1: Read the data
 # Define the file path to the dataset. The 'r' prefix is used to handle the backslashes in the Windows file path correctly.
-file_path = r'C:\Users\antho\Downloads\Dataset of Diabetes .csv'  #can be updated to search for the csv file within the folder
+file_path = r'C:\Users\antho\Downloads\Dataset of Diabetes .csv'  # Update the path as needed
 
 # Read the CSV file into a pandas DataFrame
 data = pd.read_csv(file_path)
@@ -34,60 +42,127 @@ for col in numeric_columns:
 # Calculate and print the total number of missing values in the entire DataFrame
 print("Missing values after filling:", data.isnull().sum().sum())
 
-# Step 3: Data Standardization
-from sklearn.preprocessing import StandardScaler
 
+# Convert categorical columns to numerical (if needed)
+if 'Gender' in data.columns:
+    data['Gender'] = data['Gender'].map({'M': 1, 'F': 0})
 
-# Standardize numerical features to ensure all features have a similar scale
-numeric_columns = data.select_dtypes(include=[np.number]).columns
-scaler = StandardScaler()
-data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
+# Convert target variable 'CLASS' to numerical
+if 'CLASS' in data.columns:
+    data['CLASS'] = data['CLASS'].map({'N': 0, 'Y': 1, 'P': 2})  # Assuming 'Y' and 'P' are other classes
 
-# Print the first few rows of the standardized numerical features for verification
-print(data[numeric_columns].head())
+# Remove rows with NaN values in 'CLASS' after mapping
+data = data.dropna(subset=['CLASS'])
 
-# Step 4: Split the data into training and testing sets
-from sklearn.model_selection import train_test_split
-
-
-# Define features (X) and target (y)
-X = data.drop(columns=['CLASS'])
+# Features and target split
+X = data.drop('CLASS', axis=1)
 y = data['CLASS']
 
-# Split the data into training and testing sets (80% train, 20% test)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Check for specific column names and handle missing columns
+if 'BMI' in X.columns and 'AGE' in X.columns:
+    X['BMI_Age'] = X['BMI'] * X['AGE']
+else:
+    print("Columns 'BMI' or 'AGE' not found in the dataset.")
+    # If columns are missing, create BMI_Age with default values (optional)
+    X['BMI_Age'] = np.zeros(len(X))
 
-# Print the shapes of the resulting datasets for verification
-print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
+# Ensure no NaN values in features
+X = X.fillna(0)
+print("Missing values in features after filling:", X.isnull().sum().sum())
 
-# Step 5: Model Creation
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+# Standardize the features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
 
-# Create the Artificial Neural Network (ANN) model
-model = Sequential()
+# Define a function to create the model, required for KerasClassifier
+def create_model(optimizer='adam'):
+    model = Sequential()
+    model.add(Input(shape=(X_scaled.shape[1],)))
+    model.add(Dense(16, activation='relu'))
+    model.add(Dense(8, activation='relu'))
+    model.add(Dense(3, activation='softmax'))  # Assuming three classes
+    model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    return model
 
-# Adding the input layer and the first hidden layer with 12 neurons and 'relu' activation function
-model.add(Dense(units=12, activation='relu', input_dim=X_train.shape[1]))
+# Step 3: Hyperparameter Tuning using GridSearchCV
+model = KerasClassifier(model=create_model, verbose=0)
+param_grid = {
+    'batch_size': [10, 20],
+    'epochs': [50, 100],
+    'optimizer': ['adam', 'rmsprop']
+}
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=-1, cv=3)
+grid_result = grid.fit(X_scaled, y)
 
-# Adding the second hidden layer with 8 neurons and 'relu' activation function
-model.add(Dense(units=8, activation='relu'))
+# Summarize results of hyperparameter tuning
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
 
-# Adding the output layer with 1 neuron and 'sigmoid' activation function since it's a binary classification problem
-model.add(Dense(units=1, activation='sigmoid'))
+# Step 4: Cross-Validation
+kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+results = cross_val_score(grid.best_estimator_, X_scaled, y, cv=kfold)
+print("Cross-validation results: %.2f%% (%.2f%%)" % (results.mean()*100, results.std()*100))
 
-# Print the model summary to verify the architecture
-print(model.summary())
+# Step 5: Training the model with best parameters
+best_model = grid.best_estimator_
+history = best_model.fit(X_scaled, y, validation_split=0.2, epochs=grid_result.best_params_['epochs'], batch_size=grid_result.best_params_['batch_size'])
 
-# Step 6: Model Compilation
-# Compile the ANN model
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+# Step 6: Evaluating the model
+y_pred = best_model.predict(X_scaled)
+cm = confusion_matrix(y, y_pred)
+accuracy = accuracy_score(y, y_pred)
+precision = precision_score(y, y_pred, average='weighted')
+f1 = f1_score(y, y_pred, average='weighted')
+roc_auc = roc_auc_score(y, best_model.predict_proba(X_scaled), multi_class='ovr')
 
-# Step 7: Model Training
-# Train the ANN model on the training data
-history = model.fit(X_train, y_train, epochs=100, batch_size=10, validation_split=0.2)
+print("Confusion Matrix:\n", cm)
+print("Accuracy:", accuracy)
+print("Precision:", precision)
+print("F1 Score:", f1)
+print("ROC-AUC Score:", roc_auc)
 
-# Step 8: Model Evaluation
-# Evaluate the model on the test data
-test_loss, test_accuracy = model.evaluate(X_test, y_test)
-print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+# Step 7: Visualizing the training process
+matplot.plot(history.history_['accuracy'])
+matplot.plot(history.history_['val_accuracy'])
+matplot.title('Model accuracy')
+matplot.ylabel('Accuracy')
+matplot.xlabel('Epoch')
+matplot.legend(['Train', 'Validation'], loc='upper left')
+matplot.show()
+
+matplot.plot(history.history_['loss'])
+matplot.plot(history.history_['val_loss'])
+matplot.title('Model loss')
+matplot.ylabel('Loss')
+matplot.xlabel('Epoch')
+matplot.legend(['Train', 'Validation'], loc='upper left')
+matplot.show()
+
+# Documenting the steps
+documentation = """
+1. Data Reading and Cleaning:
+   - Read the dataset from the provided CSV file.
+   - Filled missing values in 'Gender' with the mode and in numeric columns with the mean.
+   - Converted categorical columns to numerical values.
+   - Removed rows with NaN values in 'CLASS' column.
+   - Created new feature 'BMI_Age' by multiplying 'BMI' and 'AGE'.
+
+2. Feature Scaling:
+   - Standardized the features using StandardScaler.
+
+3. Hyperparameter Tuning:
+   - Used GridSearchCV to find the best parameters for batch size, epochs, and optimizer.
+
+4. Cross-Validation:
+   - Implemented 5-fold cross-validation to ensure the model generalizes well to unseen data.
+
+5. Model Training:
+   - Trained the final model with the best parameters from GridSearchCV.
+
+6. Model Evaluation:
+   - Evaluated the model using confusion matrix, accuracy, precision, F1 score, and ROC-AUC score.
+
+7. Visualization:
+   - Visualized the training process by plotting accuracy and loss over epochs for both training and validation sets.
+"""
+
+print(documentation)
