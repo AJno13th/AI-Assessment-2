@@ -65,5 +65,8 @@ DETAILS
     6. Model Evaluation:
        - Evaluate the model using confusion matrix, accuracy, precision, F1 score, and ROC-AUC score.
 
-    7. Visualization:
+    7. Model Save:
+       - Saves the best ANN model to the same directory the script is saved in.
+
+    8. Visualization:
        - Visualize the training process by plotting accuracy and loss over epochs for both training and validation sets.
