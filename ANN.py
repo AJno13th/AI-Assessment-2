@@ -120,10 +120,10 @@ print("Precision:", precision)
 print("F1 Score:", f1)
 print("ROC-AUC Score:", roc_auc)
 
-# Step : Save the model to the same folder as the script
+# Step 7: Save the model to the same folder as the script
 best_model.model_.save('Best_model.h5')
 
-# Step 7: Visualizing the training process
+# Step 8: Visualizing the training process
 matplot.plot(history.history_['accuracy'])
 matplot.plot(history.history_['val_accuracy'])
 matplot.title('Model accuracy')
@@ -167,7 +167,7 @@ documentation = """
 7. Model Save:
     - Saves the best ANN model to the same directory the script is saved in.
 
-7. Visualization:
+8. Visualization:
    - Visualized the training process by plotting accuracy and loss over epochs for both training and validation sets.
 """
 
